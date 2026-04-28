@@ -3,7 +3,8 @@ from zk import ZK
 from datetime import datetime
 import calendar
 from zoneinfo import ZoneInfo
-
+from fastapi import Body
+from fastapi import HTTPException
 router = APIRouter()
 
 def parse_periode(periode: str):
@@ -17,74 +18,70 @@ def parse_periode(periode: str):
 
 
 def get_attendance(ip: str, port: int, periode: str = None):
+    START_DATE = None
+    END_DATE = None
+
+    if periode:
+        START_DATE, END_DATE = parse_periode(periode)
+
+    zk = ZK(ip, port=port, timeout=20, password=0)
+    conn = zk.connect()
+
     try:
-        START_DATE = None
-        END_DATE = None
-
-        if periode:
-            START_DATE, END_DATE = parse_periode(periode)
-            print("FILTER PERIODE:", START_DATE, "s/d", END_DATE)
-
-        zk = ZK(ip, port=port, timeout=20, password=0)
-        conn = zk.connect()
-
         attendances = conn.get_attendance()
         result = []
+
         LIMIT = 10000
         count = 0
-        
-        print("TOTAL RAW FROM DEVICE:", len(attendances))
-        print("PERIODE PARAM:", periode)
-        print("START:", START_DATE, "END:", END_DATE)
+
         for att in attendances:
-            try:
-                ts = att.timestamp
+            ts = att.timestamp
 
-                if ts.tzinfo is not None:
-                    ts = ts.replace(tzinfo=None)
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
 
-                if START_DATE and END_DATE:
-                    if not (START_DATE <= ts <= END_DATE):
-                        continue
+            if START_DATE and END_DATE:
+                if not (START_DATE <= ts <= END_DATE):
+                    continue
 
-                result.append({
-                    "user_id": str(att.user_id),
-                    "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
-                    "status": att.status
-                })
+            result.append({
+                "user_id": str(att.user_id),
+                "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": att.status
+            })
 
-                count += 1
-                if count >= LIMIT:
-                    break
-
-            except Exception as e:
-                print("ERROR PARSE ATT:", e)
-                continue
-
-        conn.disconnect()
-
-        print("FILTERED RESULT:", len(result))
+            count += 1
+            if count >= LIMIT:
+                break
 
         return result
 
+    finally:
+        conn.disconnect()
+
+@router.post("/attendance")
+def attendance(payload: dict = Body(...)):
+    try:
+        ip = payload.get("ip")
+        port = payload.get("port", 4370)
+        periode = payload.get("periode")
+
+        if not ip:
+            raise HTTPException(status_code=400, detail="IP is required")
+
+        data = get_attendance(ip, port, periode)
+
+        return {
+            "success": True,
+            "count": len(data),
+            "data": data
+        }
+
+    except HTTPException as e:
+        raise e
+
     except Exception as e:
-        print("ERROR CONNECT ZK:", e)
-        return []
-
-
-@router.get("/attendance")
-def attendance(
-    ip: str,
-    port: int = 4370,
-    periode: str = Query(None)
-):
-    data = get_attendance(ip, port, periode)
-
-    return {
-        "success": True,
-        "count": len(data),
-        "data": data
-    }
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/device-time")
