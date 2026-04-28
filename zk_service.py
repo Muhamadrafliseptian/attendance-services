@@ -63,7 +63,7 @@ def get_attendance(ip: str, port: int, periode: str = None):
 def attendance(payload: dict = Body(...)):
     try:
         ip = payload.get("ip")
-        port = payload.get("port", 4370)
+        port = int(payload.get("port", 4370))
         periode = payload.get("periode")
 
         if not ip:
