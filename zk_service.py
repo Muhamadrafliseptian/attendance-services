@@ -58,6 +58,27 @@ def get_attendance(ip: str, port: int, periode: str = None):
 
     finally:
         conn.disconnect()
+        
+def get_users(ip: str, port: int):
+    zk = ZK(ip, port=port, timeout=20, password=0)
+    conn = zk.connect()
+
+    try:
+        users = conn.get_users()
+        result = []
+
+        for user in users:
+            result.append({
+                "uid": user.uid,
+                "user_id": str(user.user_id),
+                "name": user.name,
+                "role": user.privilege,
+            })
+
+        return result
+
+    finally:
+        conn.disconnect()
 
 @router.post("/attendance")
 def attendance(payload: dict = Body(...)):
@@ -70,6 +91,29 @@ def attendance(payload: dict = Body(...)):
             raise HTTPException(status_code=400, detail="IP is required")
 
         data = get_attendance(ip, port, periode)
+
+        return {
+            "success": True,
+            "count": len(data),
+            "data": data
+        }
+
+    except HTTPException as e:
+        raise e
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/users")
+def users(payload: dict = Body(...)):
+    try:
+        ip = payload.get("ip")
+        port = int(payload.get("port", 4370))
+
+        if not ip:
+            raise HTTPException(status_code=400, detail="IP is required")
+
+        data = get_users(ip, port)
 
         return {
             "success": True,
