@@ -168,3 +168,32 @@ def device_time(ip: str, port: int = 4370):
             "success": False,
             "message": str(e)
         }
+        
+@router.post("/check-connection")
+def check_connection(payload: dict = Body(...)):
+    try:
+        ip = payload.get("ip")
+        port = int(payload.get("port", 4370))
+
+        if not ip:
+            raise HTTPException(status_code=400, detail="IP is required")
+
+        zk = ZK(ip, port=port, timeout=5, password=0)
+
+        try:
+            conn = zk.connect()
+            conn.disconnect()
+
+            return {
+                "success": True,
+                "message": "Device connected successfully"
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to connect: {str(e)}"
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
