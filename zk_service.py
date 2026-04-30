@@ -17,10 +17,17 @@ def parse_periode(periode: str):
     return start, end
 
 
-def get_attendance(ip: str, port: int, periode: str = None):
+def get_attendance(ip: str, port: int, periode: str = None, last_pull: str = None):
     START_DATE = None
     END_DATE = None
+    last_pull_dt = None
 
+    if last_pull:
+        try:
+            last_pull_dt = datetime.strptime(last_pull, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            last_pull_dt = None
+    
     if periode:
         START_DATE, END_DATE = parse_periode(periode)
 
@@ -31,7 +38,7 @@ def get_attendance(ip: str, port: int, periode: str = None):
         attendances = conn.get_attendance()
         result = []
 
-        LIMIT = 10000
+        # LIMIT = 10000
         count = 0
 
         for att in attendances:
@@ -39,6 +46,9 @@ def get_attendance(ip: str, port: int, periode: str = None):
 
             if ts.tzinfo is not None:
                 ts = ts.replace(tzinfo=None)
+            
+            if last_pull_dt and ts <= last_pull_dt:
+                continue
 
             if START_DATE and END_DATE:
                 if not (START_DATE <= ts <= END_DATE):
@@ -50,9 +60,9 @@ def get_attendance(ip: str, port: int, periode: str = None):
                 "status": att.status
             })
 
-            count += 1
-            if count >= LIMIT:
-                break
+            # count += 1
+            # if count >= LIMIT:
+            #     break
 
         return result
 
@@ -86,11 +96,12 @@ def attendance(payload: dict = Body(...)):
         ip = payload.get("ip")
         port = int(payload.get("port", 4370))
         periode = payload.get("periode")
-
+        last_pull = payload.get("last_pull")
+        
         if not ip:
             raise HTTPException(status_code=400, detail="IP is required")
 
-        data = get_attendance(ip, port, periode)
+        data = get_attendance(ip, port, periode, last_pull)
 
         return {
             "success": True,
