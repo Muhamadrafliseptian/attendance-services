@@ -4,6 +4,7 @@ from datetime import datetime
 import calendar
 from zoneinfo import ZoneInfo
 from fastapi import Body
+import traceback
 from fastapi import HTTPException
 router = APIRouter()
 
@@ -161,6 +162,25 @@ def device_time(ip: str, port: int = 4370):
 
         now_after = datetime.now(ZoneInfo("Asia/Jakarta")).replace(tzinfo=None)
         diff_after = abs((now_after - device_time_after).total_seconds())
+        def safe_call(fn):
+                try:
+                    return fn()
+                except:
+                    return None
+        device_info = {
+            "device_name": safe_call(conn.get_device_name),
+            "serial_number": safe_call(conn.get_serialnumber),
+            "firmware_version": safe_call(conn.get_firmware_version),
+            "platform": safe_call(conn.get_platform),
+            "mac_address": safe_call(conn.get_mac),
+
+            "device_time": safe_call(conn.get_time),
+
+            "fingerprint_version": safe_call(conn.get_fp_version),
+            "face_version": safe_call(conn.get_face_version),
+
+            "pin_width": safe_call(conn.get_pin_width),
+        }
 
         conn.disconnect()
 
@@ -171,6 +191,7 @@ def device_time(ip: str, port: int = 4370):
             "server_time": now_after.strftime("%Y-%m-%d %H:%M:%S"),
             "difference_before": int(diff_seconds),
             "difference_after": int(diff_after),
+            "data": device_info,
             "synced": synced
         }
 
@@ -179,7 +200,7 @@ def device_time(ip: str, port: int = 4370):
             "success": False,
             "message": str(e)
         }
-        
+
 @router.post("/check-connection")
 def check_connection(payload: dict = Body(...)):
     try:
@@ -193,11 +214,33 @@ def check_connection(payload: dict = Body(...)):
 
         try:
             conn = zk.connect()
+            def safe_call(fn):
+                try:
+                    return fn()
+                except:
+                    return None
+
+            device_info = {
+            "device_name": safe_call(conn.get_device_name),
+            "serial_number": safe_call(conn.get_serialnumber),
+            "firmware_version": safe_call(conn.get_firmware_version),
+            "platform": safe_call(conn.get_platform),
+            "mac_address": safe_call(conn.get_mac),
+
+            "device_time": safe_call(conn.get_time),
+
+            "fingerprint_version": safe_call(conn.get_fp_version),
+            "face_version": safe_call(conn.get_face_version),
+
+            "pin_width": safe_call(conn.get_pin_width),
+        }
+
             conn.disconnect()
 
             return {
                 "success": True,
-                "message": "Device connected successfully"
+                "message": "Device connected successfully",
+                "data": device_info
             }
 
         except Exception as e:
@@ -207,4 +250,100 @@ def check_connection(payload: dict = Body(...)):
             }
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/check-multiple")
+def check_multiple(payload: dict = Body(...)):
+    devices = payload.get("devices", [])
+
+    results = []
+
+    for dev in devices:
+        ip = dev.get("ip")
+        port = int(dev.get("port", 4370))
+
+        zk = ZK(ip, port=port, timeout=3, password=0)
+
+        try:
+            conn = zk.connect()
+            conn.disconnect()
+
+            results.append({
+                "ip": ip,
+                "status": "online",
+            })
+        except:
+            results.append({
+                "ip": ip,
+                "status": "offline"
+            })
+
+    return {
+        "success": True,
+        "data": results
+    }
+    
+@router.post("/delete-user")
+def delete_user(payload: dict = Body(...)):
+    try:
+        ip = payload.get("ip")
+        port = int(payload.get("port", 4370))
+        uid = payload.get("uid")
+
+        if not ip or uid is None:
+            raise HTTPException(status_code=400, detail="IP dan uid wajib")
+
+        zk = ZK(ip, port=port, timeout=10, password=0)
+        conn = zk.connect()
+
+        try:
+            conn.delete_user(uid=int(uid))
+
+            return {
+                "success": True,
+                "message": "User berhasil dihapus"
+            }
+
+        finally:
+            conn.disconnect()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/set-user")
+def set_user(payload: dict = Body(...)):
+    try:
+        ip = payload.get("ip")
+        port = int(payload.get("port", 4370))
+        uid = payload.get("uid")
+        user_id = payload.get("user_id")
+        name = payload.get("name", "Unknown")
+
+        if not ip or not user_id or uid is None:
+            raise HTTPException(status_code=400, detail="IP, uid dan user_id wajib")
+
+        zk = ZK(ip, port=port, timeout=10, password=0)
+        conn = zk.connect()
+
+        try:
+            conn.set_user(
+                uid=int(uid),
+                name=str(name),
+                privilege=0,
+                password='',  
+                group_id='0',
+                user_id=str(user_id)
+            )
+
+            return {
+                "success": True,
+                "message": "User berhasil ditambahkan"
+            }
+
+        finally:
+            conn.disconnect()
+
+    except Exception as e:
+        import traceback
+        print("ERROR:", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
