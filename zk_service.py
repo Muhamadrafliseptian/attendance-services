@@ -2,11 +2,18 @@ from fastapi import APIRouter, Query
 from zk import ZK
 from datetime import datetime
 import calendar
+import os
 from zoneinfo import ZoneInfo
 from fastapi import Body
 import traceback
-from fastapi import HTTPException
-router = APIRouter()
+from fastapi import Depends, Header, HTTPException
+from config import API_KEY
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 def parse_periode(periode: str):
     year, month = map(int, periode.split("-"))
