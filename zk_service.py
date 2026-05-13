@@ -217,7 +217,12 @@ def check_connection(payload: dict = Body(...)):
         if not ip:
             raise HTTPException(status_code=400, detail="IP is required")
 
-        zk = ZK(ip, port=port, timeout=5, password=0)
+        zk = ZK(ip,
+    port=port,
+    timeout=60,
+    password=0,
+    force_udp=False,
+    ommit_ping=True)
 
         try:
             conn = zk.connect()
